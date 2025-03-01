@@ -8,6 +8,8 @@ from langchain_community.agent_toolkits.json.base import create_json_agent
 from langchain_experimental.agents.agent_toolkits import create_csv_agent
 from langchain.prompts import PromptTemplate
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_community.tools.json.tool import JsonSpec
+
 
 handleGreetings = ChatPromptTemplate.from_messages([
     (
@@ -26,8 +28,26 @@ def loadLLM():
   )
   return llm
 
-def jsonAgent(file):
-  return agent
+def jsonAgent(file,llm):
+  data=json.loads(file)
+  print(data)
+  print(isinstance(data,list))
+  if isinstance(data, list):
+      data_dict = {item['id']: item for item in data}
+  else:
+      data_dict = data 
+
+  json_spec = JsonSpec(dict_=data_dict, max_value_length=4000)
+  json_toolkit = JsonToolkit(spec=json_spec)
+
+  # Create the JSON agent
+  json_agent_executor = create_json_agent(
+      llm=llm,
+      toolkit=json_toolkit,
+      verbose=True,
+      agent_executor_kwargs={"handle_parsing_errors": True},
+  )
+  return json_agent_executor
 
 def csvAgent(file,llm):
   template = """
@@ -80,7 +100,13 @@ uploadFile=st.file_uploader('Choose a file',type=['csv','json'])
 if uploadFile :
   llm=loadLLM()
   fileType=os.path.splitext(uploadFile.name)[1]
-  if fileType=='.csv':
+  if fileType=='.json':
+    file=uploadFile.getvalue().decode('utf-8').strip()
+    if not file:
+      st.error("Error: The uploaded JSON file is empty!")
+    else:
+      agent=jsonAgent(file,llm)
+  elif fileType=='.csv':
     agent=csvAgent(uploadFile,llm)
   else:
     st.write('Please upload csv or json file')
@@ -99,6 +125,7 @@ if uploadFile:
 
     chain = handleGreetings | llm
     ai_msg = chain.invoke({'input':'{prompt}'})
+    print(ai_msg)
     json_content = ai_msg.content.strip("```json").strip("```").strip()
     resp = json.loads(json_content)
     if not resp['greet']:
